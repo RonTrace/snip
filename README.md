@@ -1,6 +1,6 @@
-# Snip - Web Element Inspector
+# Snip - A modern web element inspector
 
-Snip is a modern web content clipper that makes it easy to inspect elements of a web page and examine their underlying content, code, and important styles. Originally built with AI-assisted development in mind, Snip helps developers and content creators quickly grab context from webpages by providing clean, structured access to both text content and HTML markup.
+Snip is a modern web element inspector that makes it easy to clip elements of a web page and examine their underlying content, code, and important styles. Originally built with AI-assisted development in mind, Snip helps developers and content creators quickly grab context from webpages by providing clean, structured access to both text content and HTML markup.
 
 While designed to streamline the process of gathering web content for AI interactions, Snip is versatile enough for any use case where you need to analyze or extract web elements - whether you're developing, designing, or researching.
 
