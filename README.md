@@ -29,9 +29,17 @@ While designed to streamline the process of gathering web content for AI interac
 2. Click the scissors icon to enter inspection mode
 3. Hover over elements to highlight them
 4. Click on an element to analyze its:
+   - Preview image
    - Clean text content
-   - HTML markup
-   - Element metadata
+   - Element metadata (tag, class, XPath, URL)
+   - DOM context (parent, children, siblings)
+   - Computed styles
+   - Accessibility information
+
+5. Copy content using:
+   - "Copy All" button at the top to copy everything
+   - Individual copy buttons for Preview, Content, and Info sections
+   - Content is copied in a structured format with images appearing first
 
 ## Development
 
