@@ -429,38 +429,6 @@ struct NotebookPanel: View {
                             .padding(.bottom, 8)
                             
                             ElementMetadata(element: element)
-                            
-                            Divider()
-                            
-                            if let image = element.image {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    SectionHeader(title: "Visual Preview", content: "", image: image)
-                                    
-                                    Image(nsImage: image)
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fit)
-                                        .frame(maxWidth: .infinity)
-                                        .background(Color.gray.opacity(0.1))
-                                        .cornerRadius(8)
-                                }
-                                
-                                Divider()
-                            }
-                            
-                            VStack(alignment: .leading, spacing: 8) {
-                                SectionHeader(title: "Text Content", content: element.textContent)
-                                
-                                Text(element.textContent)
-                                    .textSelection(.enabled)
-                            }
-                            
-                            Divider()
-                            
-                            VStack(alignment: .leading, spacing: 8) {
-                                SectionHeader(title: "HTML", content: element.content)
-                                
-                                HTMLContent(html: element.content)
-                            }
                         }
                         .padding()
                     }
@@ -487,44 +455,43 @@ struct ElementMetadata: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Location Info
-            if let location = element.metadata["location"] as? [String: String] {
-                GroupBox("Location") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        InfoRow(label: "Path", value: location["pathname"] ?? "")
-                        if let search = location["search"], !search.isEmpty {
-                            InfoRow(label: "Query", value: search)
-                        }
-                        if let hash = location["hash"], !hash.isEmpty {
-                            InfoRow(label: "Hash", value: hash)
-                        }
-                        InfoRow(label: "Full URL", value: location["href"] ?? "")
-                    }
-                    .padding(8)
+            // Preview
+            if let image = element.image {
+                GroupBox("Preview") {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxHeight: 200)
+                        .padding(8)
                 }
             }
             
-            // XPath
-            if let xpath = element.metadata["xpath"] as? String {
-                GroupBox("Element Path") {
-                    VStack(alignment: .leading, spacing: 8) {
+            // Content
+            GroupBox("Content") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(element.textContent)
+                        .textSelection(.enabled)
+                        .font(.system(.body, design: .monospaced))
+                }
+                .padding(8)
+            }
+            
+            // Info
+            GroupBox("Info") {
+                VStack(alignment: .leading, spacing: 8) {
+                    InfoRow(label: "Tag", value: element.tagName)
+                    if !element.className.isEmpty {
+                        InfoRow(label: "Class", value: element.className)
+                    }
+                    if let xpath = element.metadata["xpath"] as? String {
                         InfoRow(label: "XPath", value: xpath)
                     }
-                    .padding(8)
+                    if let location = element.metadata["location"] as? [String: String],
+                       let pathname = location["pathname"] {
+                        InfoRow(label: "URL", value: pathname)
+                    }
                 }
-            }
-            
-            // Basic Info
-            Group {
-                InfoRow(label: "Tag", value: element.tagName)
-                if !element.className.isEmpty {
-                    InfoRow(label: "Class", value: element.className)
-                }
-                if let domContext = element.metadata["domContext"] as? [String: Any],
-                   let id = domContext["id"] as? String,
-                   !id.isEmpty {
-                    InfoRow(label: "ID", value: id)
-                }
+                .padding(8)
             }
             
             // DOM Context
@@ -605,6 +572,7 @@ struct ElementMetadata: View {
                 }
             }
         }
+        .padding()
     }
 }
 
@@ -613,15 +581,14 @@ struct InfoRow: View {
     let value: String
     
     var body: some View {
-        HStack(alignment: .top) {
+        HStack(alignment: .top, spacing: 8) {
             Text(label)
+                .frame(width: 60, alignment: .trailing)
                 .foregroundColor(.secondary)
-                .frame(width: 100, alignment: .trailing)
             
             Text(value)
                 .textSelection(.enabled)
         }
-        .font(.system(.body, design: .monospaced))
     }
 }
 
