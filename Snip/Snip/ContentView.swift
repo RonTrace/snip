@@ -15,7 +15,7 @@ class WebViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var canGoBack: Bool = false
     @Published var canGoForward: Bool = false
-    @Published var selectedElement: (content: String, tagName: String, className: String, textContent: String, image: NSImage?)?
+    @Published var selectedElement: SelectedElement?
     @Published var isClipModeActive: Bool = false {
         didSet {
             if isClipModeActive {
@@ -30,7 +30,7 @@ class WebViewModel: ObservableObject {
     internal let scriptHandler = WebViewScriptHandler()
     
     init() {
-        scriptHandler.onElementSelected = { [weak self] content, tagName, className, textContent, rect, restore in
+        scriptHandler.onElementSelected = { [weak self] content, tagName, className, textContent, rect, restore, metadata in
             DispatchQueue.main.async {
                 guard let webView = self?.webView else { return }
                 
@@ -46,9 +46,23 @@ class WebViewModel: ObservableObject {
                     DispatchQueue.main.async {
                         if let error = error {
                             print("Snapshot error: \(error)")
-                            self?.selectedElement = (content, tagName, className, textContent, nil)
+                            self?.selectedElement = SelectedElement(
+                                content: content,
+                                tagName: tagName,
+                                className: className,
+                                textContent: textContent,
+                                image: nil,
+                                metadata: metadata
+                            )
                         } else {
-                            self?.selectedElement = (content, tagName, className, textContent, image)
+                            self?.selectedElement = SelectedElement(
+                                content: content,
+                                tagName: tagName,
+                                className: className,
+                                textContent: textContent,
+                                image: image,
+                                metadata: metadata
+                            )
                         }
                     }
                 }
@@ -125,6 +139,13 @@ class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
     
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         timeoutTimer?.invalidate()
+        
+        // Update URL in the address bar when a link is clicked
+        if let url = navigationAction.request.url?.absoluteString {
+            DispatchQueue.main.async {
+                self.parent.viewModel.url = url
+            }
+        }
         
         timeoutTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: false) { [weak self] _ in
             DispatchQueue.main.async {
@@ -271,6 +292,112 @@ struct URLBar: View {
     }
 }
 
+struct CopyButton: View {
+    let content: String
+    let image: NSImage?
+    let label: String
+    
+    @State private var copied = false
+    
+    init(content: String, label: String, image: NSImage? = nil) {
+        self.content = content
+        self.label = label
+        self.image = image
+    }
+    
+    func copyToClipboard(includeAll: Bool = false) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        
+        if includeAll, let image = image {
+            // Create attributed string for rich text
+            let attributedString = NSMutableAttributedString()
+            
+            // Add the text content
+            attributedString.append(NSAttributedString(string: content + "\n\n"))
+            
+            // Create a cell to hold the image
+            let cell = NSTextAttachmentCell(imageCell: image)
+            
+            // Create an attachment with the cell
+            let attachment = NSTextAttachment()
+            attachment.attachmentCell = cell
+            
+            // Calculate a reasonable size for the image
+            let maxWidth: CGFloat = 600
+            let aspectRatio = image.size.width / image.size.height
+            let width = min(maxWidth, image.size.width)
+            let height = width / aspectRatio
+            
+            // Set the bounds for the attachment
+            attachment.bounds = CGRect(x: 0, y: 0, width: width, height: height)
+            
+            // Add the image attachment
+            let imageString = NSAttributedString(attachment: attachment)
+            attributedString.append(imageString)
+            
+            // Write both RTF and image to pasteboard
+            if let rtfData = attributedString.rtf(from: NSRange(location: 0, length: attributedString.length)) {
+                pasteboard.setData(rtfData, forType: .rtf)
+            }
+            
+            // Also write the image separately
+            pasteboard.writeObjects([image])
+            
+            // And the plain text as fallback
+            pasteboard.setString(content, forType: .string)
+            
+        } else if let image = image {
+            pasteboard.writeObjects([image])
+        } else {
+            pasteboard.setString(content, forType: .string)
+        }
+    }
+    
+    var body: some View {
+        Button {
+            copyToClipboard(includeAll: label == "Copy All Content")
+            copied = true
+            
+            // Reset the copied state after 2 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                copied = false
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(label)
+                Image(systemName: copied ? "checkmark.circle.fill" : "doc.on.doc")
+                    .foregroundColor(copied ? .green : .gray)
+            }
+            .font(.system(size: 12))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct SectionHeader: View {
+    let title: String
+    let content: String
+    let image: NSImage?
+    
+    init(title: String, content: String, image: NSImage? = nil) {
+        self.title = title
+        self.content = content
+        self.image = image
+    }
+    
+    var body: some View {
+        HStack {
+            Text(title)
+                .font(.headline)
+            
+            Spacer()
+            
+            CopyButton(content: content, label: "Copy", image: image)
+        }
+    }
+}
+
 struct NotebookPanel: View {
     @ObservedObject var viewModel: WebViewModel
     
@@ -283,14 +410,31 @@ struct NotebookPanel: View {
                 if let element = viewModel.selectedElement {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 16) {
+                            // Copy All Button at the top
+                            CopyButton(
+                                content: """
+                                Selected Element:
+                                Tag: \(element.tagName)
+                                Class: \(element.className)
+                                
+                                Text Content:
+                                \(element.textContent)
+                                
+                                HTML:
+                                \(element.content)
+                                """,
+                                label: "Copy All Content",
+                                image: element.image
+                            )
+                            .padding(.bottom, 8)
+                            
                             ElementMetadata(element: element)
                             
                             Divider()
                             
                             if let image = element.image {
                                 VStack(alignment: .leading, spacing: 8) {
-                                    Text("Visual Preview")
-                                        .font(.headline)
+                                    SectionHeader(title: "Visual Preview", content: "", image: image)
                                     
                                     Image(nsImage: image)
                                         .resizable()
@@ -304,8 +448,7 @@ struct NotebookPanel: View {
                             }
                             
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("Text Content")
-                                    .font(.headline)
+                                SectionHeader(title: "Text Content", content: element.textContent)
                                 
                                 Text(element.textContent)
                                     .textSelection(.enabled)
@@ -314,8 +457,7 @@ struct NotebookPanel: View {
                             Divider()
                             
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("HTML")
-                                    .font(.headline)
+                                SectionHeader(title: "HTML", content: element.content)
                                 
                                 HTMLContent(html: element.content)
                             }
@@ -340,6 +482,165 @@ struct NotebookPanel: View {
     }
 }
 
+struct ElementMetadata: View {
+    let element: SelectedElement
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Location Info
+            if let location = element.metadata["location"] as? [String: String] {
+                GroupBox("Location") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        InfoRow(label: "Path", value: location["pathname"] ?? "")
+                        if let search = location["search"], !search.isEmpty {
+                            InfoRow(label: "Query", value: search)
+                        }
+                        if let hash = location["hash"], !hash.isEmpty {
+                            InfoRow(label: "Hash", value: hash)
+                        }
+                        InfoRow(label: "Full URL", value: location["href"] ?? "")
+                    }
+                    .padding(8)
+                }
+            }
+            
+            // XPath
+            if let xpath = element.metadata["xpath"] as? String {
+                GroupBox("Element Path") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        InfoRow(label: "XPath", value: xpath)
+                    }
+                    .padding(8)
+                }
+            }
+            
+            // Basic Info
+            Group {
+                InfoRow(label: "Tag", value: element.tagName)
+                if !element.className.isEmpty {
+                    InfoRow(label: "Class", value: element.className)
+                }
+                if let domContext = element.metadata["domContext"] as? [String: Any],
+                   let id = domContext["id"] as? String,
+                   !id.isEmpty {
+                    InfoRow(label: "ID", value: id)
+                }
+            }
+            
+            // DOM Context
+            if let domContext = element.metadata["domContext"] as? [String: Any] {
+                GroupBox("DOM Context") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if let parent = domContext["parentTag"] as? String {
+                            InfoRow(label: "Parent", value: parent)
+                        }
+                        if let childCount = domContext["childrenCount"] as? Int {
+                            InfoRow(label: "Children", value: "\(childCount)")
+                        }
+                        if let siblings = domContext["siblings"] as? [String: String] {
+                            if let prev = siblings["prev"] {
+                                InfoRow(label: "Previous Sibling", value: prev)
+                            }
+                            if let next = siblings["next"] {
+                                InfoRow(label: "Next Sibling", value: next)
+                            }
+                        }
+                    }
+                    .padding(8)
+                }
+            }
+            
+            // Computed Styles
+            if let styles = element.metadata["styles"] as? [String: Any] {
+                GroupBox("Computed Styles") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        // Font Styles
+                        if let font = styles["font"] as? [String: String] {
+                            StyleSection(title: "Font", items: font)
+                        }
+                        
+                        Divider()
+                        
+                        // Box Model
+                        if let box = styles["box"] as? [String: [String: String]] {
+                            StyleSection(title: "Box Model", items: [
+                                "Padding": box["padding"]?.reduce("") { $0 + "\($1.value) " }.trimmingCharacters(in: .whitespaces) ?? "0",
+                                "Margin": box["margin"]?.reduce("") { $0 + "\($1.value) " }.trimmingCharacters(in: .whitespaces) ?? "0",
+                                "Border": box["border"]?.reduce("") { $0 + "\($1.value) " }.trimmingCharacters(in: .whitespaces) ?? "0"
+                            ])
+                        }
+                        
+                        Divider()
+                        
+                        // Layout
+                        if let layout = styles["layout"] as? [String: String] {
+                            StyleSection(title: "Layout", items: layout)
+                        }
+                    }
+                    .padding(8)
+                }
+            }
+            
+            // Accessibility
+            if let accessibility = element.metadata["accessibility"] as? [String: Any] {
+                GroupBox("Accessibility") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if let role = accessibility["role"] as? String, role != "none" {
+                            InfoRow(label: "Role", value: role)
+                        }
+                        if let ariaLabel = accessibility["ariaLabel"] as? String, !ariaLabel.isEmpty {
+                            InfoRow(label: "ARIA Label", value: ariaLabel)
+                        }
+                        if let altText = accessibility["altText"] as? String, !altText.isEmpty {
+                            InfoRow(label: "Alt Text", value: altText)
+                        }
+                        if let title = accessibility["title"] as? String, !title.isEmpty {
+                            InfoRow(label: "Title", value: title)
+                        }
+                        if let tabIndex = accessibility["tabIndex"] as? Int, tabIndex != -1 {
+                            InfoRow(label: "Tab Index", value: "\(tabIndex)")
+                        }
+                    }
+                    .padding(8)
+                }
+            }
+        }
+    }
+}
+
+struct InfoRow: View {
+    let label: String
+    let value: String
+    
+    var body: some View {
+        HStack(alignment: .top) {
+            Text(label)
+                .foregroundColor(.secondary)
+                .frame(width: 100, alignment: .trailing)
+            
+            Text(value)
+                .textSelection(.enabled)
+        }
+        .font(.system(.body, design: .monospaced))
+    }
+}
+
+struct StyleSection: View {
+    let title: String
+    let items: [String: String]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.headline)
+            
+            ForEach(items.sorted(by: { $0.key < $1.key }), id: \.key) { key, value in
+                InfoRow(label: key, value: value)
+            }
+        }
+    }
+}
+
 struct ClipModeButton: View {
     @Binding var isActive: Bool
     
@@ -358,23 +659,6 @@ struct ClipModeButton: View {
         }
         .buttonStyle(.plain)
         .help("Toggle Clip Mode")
-    }
-}
-
-struct ElementMetadata: View {
-    let element: (content: String, tagName: String, className: String, textContent: String, image: NSImage?)
-    
-    var body: some View {
-        Group {
-            Text("Tag: \(element.tagName)")
-                .font(.subheadline)
-            
-            if !element.className.isEmpty {
-                Text("Class: \(element.className)")
-                    .font(.subheadline)
-            }
-        }
-        .foregroundColor(.secondary)
     }
 }
 
@@ -478,6 +762,15 @@ struct ContentView: View {
             }
         }
     }
+}
+
+struct SelectedElement {
+    let content: String
+    let tagName: String
+    let className: String
+    let textContent: String
+    let image: NSImage?
+    let metadata: [String: Any]
 }
 
 #Preview {

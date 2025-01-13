@@ -2,7 +2,7 @@ import Foundation
 import WebKit
 
 class WebViewScriptHandler: NSObject, WKScriptMessageHandler {
-    var onElementSelected: ((String, String, String, String, [String: Double], [String: String]?) -> Void)?
+    var onElementSelected: ((String, String, String, String, [String: Double], [String: String]?, [String: Any]) -> Void)?
     
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.name == "elementSelected",
@@ -12,46 +12,56 @@ class WebViewScriptHandler: NSObject, WKScriptMessageHandler {
               let className = dict["className"] as? String,
               let textContent = dict["textContent"] as? String,
               let rect = dict["rect"] as? [String: Double],
-              let restore = dict["restore"] as? [String: String] else {
+              let restore = dict["restore"] as? [String: String],
+              let metadata = dict["metadata"] as? [String: Any],
+              let xpath = dict["xpath"] as? String,
+              let location = dict["location"] as? [String: String] else {
             return
         }
         
-        onElementSelected?(content, tagName, className, textContent, rect, restore)
+        let combinedMetadata: [String: Any] = [
+            "metadata": metadata,
+            "xpath": xpath,
+            "location": location
+        ]
+        
+        onElementSelected?(content, tagName, className, textContent, rect, restore, combinedMetadata)
     }
 }
 
 struct WebViewScripts {
     static let highlightScript = """
-        if (!window._snipHighlightInit) {
-            window._snipHighlightInit = true;
+        window._snipHighlightInit = window._snipHighlightInit || {};
+        
+        if (!window._snipHighlightInit.active) {
+            window._snipHighlightInit.active = true;
+            window._snipHighlightInit.highlightedElement = null;
+            window._snipHighlightInit.originalBackground = null;
+            window._snipHighlightInit.originalOutline = null;
             
-            let highlightedElement = null;
-            let originalBackground = null;
-            let originalOutline = null;
-            
-            function handleMouseOver(event) {
-                if (highlightedElement) {
-                    highlightedElement.style.background = originalBackground;
-                    highlightedElement.style.outline = originalOutline;
+            window._snipHighlightInit.handleMouseOver = function(event) {
+                if (window._snipHighlightInit.highlightedElement) {
+                    window._snipHighlightInit.highlightedElement.style.background = window._snipHighlightInit.originalBackground;
+                    window._snipHighlightInit.highlightedElement.style.outline = window._snipHighlightInit.originalOutline;
                 }
                 
-                highlightedElement = event.target;
-                originalBackground = highlightedElement.style.background;
-                originalOutline = highlightedElement.style.outline;
+                window._snipHighlightInit.highlightedElement = event.target;
+                window._snipHighlightInit.originalBackground = window._snipHighlightInit.highlightedElement.style.background;
+                window._snipHighlightInit.originalOutline = window._snipHighlightInit.highlightedElement.style.outline;
                 
-                highlightedElement.style.background = 'rgba(75, 137, 255, 0.1)';
-                highlightedElement.style.outline = '2px solid rgb(75, 137, 255)';
-            }
+                window._snipHighlightInit.highlightedElement.style.background = 'rgba(75, 137, 255, 0.1)';
+                window._snipHighlightInit.highlightedElement.style.outline = '2px solid rgb(75, 137, 255)';
+            };
             
-            function handleMouseOut(event) {
-                if (highlightedElement) {
-                    highlightedElement.style.background = originalBackground;
-                    highlightedElement.style.outline = originalOutline;
-                    highlightedElement = null;
+            window._snipHighlightInit.handleMouseOut = function(event) {
+                if (window._snipHighlightInit.highlightedElement) {
+                    window._snipHighlightInit.highlightedElement.style.background = window._snipHighlightInit.originalBackground;
+                    window._snipHighlightInit.highlightedElement.style.outline = window._snipHighlightInit.originalOutline;
+                    window._snipHighlightInit.highlightedElement = null;
                 }
-            }
+            };
             
-            function extractFormattedText(element) {
+            window._snipHighlightInit.extractFormattedText = function(element) {
                 let texts = [];
                 
                 // Handle block elements by adding line breaks
@@ -91,7 +101,7 @@ struct WebViewScripts {
                     .trim();
             }
             
-            function getElementRect(element) {
+            window._snipHighlightInit.getElementRect = function(element) {
                 const rect = element.getBoundingClientRect();
                 const computedStyle = window.getComputedStyle(element);
                 
@@ -104,28 +114,140 @@ struct WebViewScripts {
                 };
             }
             
-            function handleClick(event) {
+            window._snipHighlightInit.getElementMetadata = function(element) {
+                const style = window.getComputedStyle(element);
+                const rect = element.getBoundingClientRect();
+                
+                // Get computed styles
+                const styles = {
+                    font: {
+                        family: style.fontFamily,
+                        size: style.fontSize,
+                        weight: style.fontWeight,
+                        color: style.color
+                    },
+                    box: {
+                        padding: {
+                            top: style.paddingTop,
+                            right: style.paddingRight,
+                            bottom: style.paddingBottom,
+                            left: style.paddingLeft
+                        },
+                        margin: {
+                            top: style.marginTop,
+                            right: style.marginRight,
+                            bottom: style.marginBottom,
+                            left: style.marginLeft
+                        },
+                        border: {
+                            top: style.borderTopWidth,
+                            right: style.borderRightWidth,
+                            bottom: style.borderBottomWidth,
+                            left: style.borderLeftWidth
+                        }
+                    },
+                    layout: {
+                        display: style.display,
+                        position: style.position,
+                        zIndex: style.zIndex,
+                        visibility: style.visibility,
+                        backgroundColor: style.backgroundColor
+                    }
+                };
+                
+                // Get accessibility info
+                const accessibility = {
+                    role: element.getAttribute('role') || 'none',
+                    tabIndex: element.tabIndex,
+                    ariaLabel: element.getAttribute('aria-label') || '',
+                    altText: element.getAttribute('alt') || '',
+                    title: element.getAttribute('title') || ''
+                };
+                
+                // Get DOM context
+                const domContext = {
+                    parentTag: element.parentElement ? element.parentElement.tagName.toLowerCase() : null,
+                    childrenCount: element.children.length,
+                    siblings: {
+                        prev: element.previousElementSibling ? element.previousElementSibling.tagName.toLowerCase() : null,
+                        next: element.nextElementSibling ? element.nextElementSibling.tagName.toLowerCase() : null
+                    },
+                    id: element.id || ''
+                };
+                
+                return {
+                    styles,
+                    accessibility,
+                    domContext
+                };
+            }
+            
+            window._snipHighlightInit.getXPath = function(element) {
+                if (element.id !== '') {
+                    return `//*[@id="${element.id}"]`;
+                }
+                
+                if (element === document.body) {
+                    return '/html/body';
+                }
+                
+                let path = '';
+                while (element.parentElement) {
+                    let siblings = Array.from(element.parentElement.children);
+                    let tagSiblings = siblings.filter(sibling => 
+                        sibling.tagName === element.tagName
+                    );
+                    
+                    if (tagSiblings.length > 1) {
+                        let index = tagSiblings.indexOf(element) + 1;
+                        path = `/${element.tagName.toLowerCase()}[${index}]${path}`;
+                    } else {
+                        path = `/${element.tagName.toLowerCase()}${path}`;
+                    }
+                    
+                    element = element.parentElement;
+                }
+                
+                return `/html${path}`;
+            }
+            
+            window._snipHighlightInit.getLocationInfo = function() {
+                return {
+                    href: window.location.href,
+                    pathname: window.location.pathname,
+                    search: window.location.search,
+                    hash: window.location.hash
+                };
+            }
+            
+            window._snipHighlightInit.handleClick = function(event) {
                 event.preventDefault();
                 event.stopPropagation();
                 
                 const element = event.target;
-                const rect = getElementRect(element);
+                const rect = window._snipHighlightInit.getElementRect(element);
+                const metadata = window._snipHighlightInit.getElementMetadata(element);
+                const xpath = window._snipHighlightInit.getXPath(element);
+                const location = window._snipHighlightInit.getLocationInfo();
                 
                 // Store current styles
                 const currentBackground = element.style.background;
                 const currentOutline = element.style.outline;
                 
                 // Remove highlight effect
-                element.style.background = originalBackground || '';
-                element.style.outline = originalOutline || '';
+                element.style.background = window._snipHighlightInit.originalBackground || '';
+                element.style.outline = window._snipHighlightInit.originalOutline || '';
                 
                 // Send message to take screenshot
                 window.webkit.messageHandlers.elementSelected.postMessage({
                     content: element.outerHTML,
                     tagName: element.tagName.toLowerCase(),
                     className: element.className,
-                    textContent: extractFormattedText(element),
+                    textContent: window._snipHighlightInit.extractFormattedText(element),
                     rect: rect,
+                    metadata: metadata,
+                    xpath: xpath,
+                    location: location,
                     restore: {
                         background: currentBackground,
                         outline: currentOutline
@@ -141,25 +263,25 @@ struct WebViewScripts {
                 return false;
             }
             
-            document.addEventListener('mouseover', handleMouseOver, true);
-            document.addEventListener('mouseout', handleMouseOut, true);
-            document.addEventListener('click', handleClick, true);
+            document.addEventListener('mouseover', window._snipHighlightInit.handleMouseOver, true);
+            document.addEventListener('mouseout', window._snipHighlightInit.handleMouseOut, true);
+            document.addEventListener('click', window._snipHighlightInit.handleClick, true);
         }
     """
     
     static let disableHighlightScript = """
-        if (window._snipHighlightInit) {
-            document.removeEventListener('mouseover', handleMouseOver, true);
-            document.removeEventListener('mouseout', handleMouseOut, true);
-            document.removeEventListener('click', handleClick, true);
+        if (window._snipHighlightInit && window._snipHighlightInit.active) {
+            document.removeEventListener('mouseover', window._snipHighlightInit.handleMouseOver, true);
+            document.removeEventListener('mouseout', window._snipHighlightInit.handleMouseOut, true);
+            document.removeEventListener('click', window._snipHighlightInit.handleClick, true);
             
-            if (highlightedElement) {
-                highlightedElement.style.background = originalBackground;
-                highlightedElement.style.outline = originalOutline;
-                highlightedElement = null;
+            if (window._snipHighlightInit.highlightedElement) {
+                window._snipHighlightInit.highlightedElement.style.background = window._snipHighlightInit.originalBackground;
+                window._snipHighlightInit.highlightedElement.style.outline = window._snipHighlightInit.originalOutline;
+                window._snipHighlightInit.highlightedElement = null;
             }
             
-            window._snipHighlightInit = false;
+            window._snipHighlightInit.active = false;
         }
     """
 }
