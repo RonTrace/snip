@@ -9,7 +9,7 @@ import SwiftUI
 import WebKit
 
 class WebViewModel: ObservableObject {
-    @Published var url: String = "https://www.apple.com"
+    @Published var url: String = "https://news.google.com/home?hl=en-US&gl=US&ceid=US:en"
     @Published var isLoading: Bool = false
     @Published var title: String = ""
     @Published var errorMessage: String?
@@ -221,6 +221,178 @@ class WebViewCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
     }
 }
 
+#if os(macOS)
+    typealias XPasteboard = NSPasteboard
+#else
+    typealias XPasteboard = UIPasteboard
+#endif
+
+extension XPasteboard {
+    func copyMultipleItems(image: NSImage?, text: String?) {
+        self.clearContents()
+        
+        // Create the attributed string
+        let attributedString = NSMutableAttributedString()
+        
+        // Add image first if we have it
+        if let image = image {
+            print("Debug: Adding image to attributed string")
+            
+            // Create and configure text attachment
+            let attachment = NSTextAttachment()
+            attachment.image = image
+            
+            // Create attributed string with attachment and append
+            let imageString = NSAttributedString(attachment: attachment)
+            attributedString.append(imageString)
+            
+            // Add line breaks after the image
+            attributedString.append(NSAttributedString(string: "\n\n"))
+        }
+        
+        // Add text if we have it
+        if let text = text {
+            print("Debug: Adding text to attributed string")
+            
+            // Process the text to clean up duplicates and structure content
+            var sections = text.components(separatedBy: "\n\nInfo:")
+            var mainContent = sections[0]
+            let infoSection = sections.count > 1 ? sections[1] : ""
+            
+            // Remove duplicate Content: prefix
+            if mainContent.hasPrefix("Content:\nContent:\n") {
+                mainContent = String(mainContent.dropFirst("Content:\n".count))
+            } else if mainContent.hasPrefix("Content:\n") {
+                mainContent = String(mainContent.dropFirst("Content:\n".count))
+            }
+            
+            // Split main content into logical sections
+            let contentSections = mainContent.components(separatedBy: "\n").filter { !$0.isEmpty }
+            var formattedContent = ""
+            
+            // Format main content with visual breaks
+            var currentSection = ""
+            for line in contentSections {
+                if line.hasSuffix(":") || line == "Previous" || line == "Next" || line == "Mark as Watched" || line == "Report" {
+                    if !currentSection.isEmpty {
+                        formattedContent += currentSection + "\n\n"
+                        currentSection = ""
+                    }
+                    currentSection = line
+                } else {
+                    if !currentSection.isEmpty {
+                        currentSection += "\n"
+                    }
+                    currentSection += line
+                }
+            }
+            formattedContent += currentSection
+            
+            // Add the formatted content
+            attributedString.append(NSAttributedString(string: formattedContent))
+            
+            // Add Info section if it exists
+            if !infoSection.isEmpty {
+                attributedString.append(NSAttributedString(string: "\n\n---\n\n"))
+                attributedString.append(NSAttributedString(string: "Info:" + infoSection))
+            }
+        }
+        
+        do {
+            // Convert to RTFD
+            let range = NSRange(location: 0, length: attributedString.length)
+            let data = try attributedString.data(
+                from: range,
+                documentAttributes: [.documentType: NSAttributedString.DocumentType.rtfd]
+            )
+            
+            print("Debug: Writing RTFD data to pasteboard")
+            self.setData(data, forType: .rtfd)
+            
+            // Also write plain text for maximum compatibility
+            if let text = text {
+                self.setString(text, forType: .string)
+            }
+            
+            print("Debug: Final pasteboard types:", self.types ?? [])
+        } catch {
+            print("Debug: Error converting to RTFD:", error)
+        }
+    }
+    
+    func copyString(_ text: String) {
+        self.clearContents()
+        self.setString(text, forType: .string)
+    }
+}
+
+struct CopyButton: View {
+    let image: NSImage?
+    let content: String
+    let element: ElementData
+    let showLabel: Bool
+    @State private var isCopied = false
+    
+    init(image: NSImage? = nil, content: String, element: ElementData, showLabel: Bool = false) {
+        self.image = image
+        self.content = content
+        self.element = element
+        self.showLabel = showLabel
+    }
+    
+    var body: some View {
+        Button {
+            copyToClipboard()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: isCopied ? "checkmark.circle.fill" : "doc.on.doc")
+                    .foregroundColor(isCopied ? .green : .primary)
+                
+                if showLabel {
+                    Text("Copy All")
+                        .foregroundColor(isCopied ? .green : .primary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+    
+    func copyToClipboard() {
+        if let image = image {
+            if content.isEmpty {
+                print("Debug: Copying image only")
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.writeObjects([image])
+            } else {
+                print("Debug: Copying both image and text")
+                let textString = createFormattedTextString(content: content, element: element)
+                NSPasteboard.general.copyMultipleItems(image: image, text: textString)
+                print("Debug: Available types:", NSPasteboard.general.types ?? [])
+            }
+        } else if !content.isEmpty {
+            NSPasteboard.general.copyString(content)
+        }
+        
+        isCopied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            isCopied = false
+        }
+    }
+    
+    private func createFormattedTextString(content: String, element: ElementData) -> String {
+        return """
+        Content:
+        \(content)
+        
+        Info:
+        Tag: \(element.tagName)
+        Class: \(element.className)\(element.className.isEmpty ? "" : "\n")\
+        \((element.metadata["xpath"] as? String).map { "XPath: \($0)\n" } ?? "")\
+        \((element.metadata["location"] as? [String: String])?.compactMapValues { $0 }["pathname"].map { "URL: \($0)" } ?? "")
+        """
+    }
+}
+
 struct NavigationBar: View {
     @ObservedObject var viewModel: WebViewModel
     
@@ -292,93 +464,6 @@ struct URLBar: View {
     }
 }
 
-struct CopyButton: View {
-    let image: NSImage?
-    let content: String
-    let element: ElementData
-    @State private var isCopied = false
-    
-    init(image: NSImage? = nil, content: String, element: ElementData) {
-        self.image = image
-        self.content = content
-        self.element = element
-    }
-    
-    var body: some View {
-        Button {
-            copyToClipboard()
-        } label: {
-            Image(systemName: isCopied ? "checkmark.circle.fill" : "doc.on.doc")
-                .foregroundColor(isCopied ? .green : .primary)
-        }
-        .buttonStyle(.plain)
-    }
-    
-    func copyToClipboard() {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        
-        if let image = image {
-            if content.isEmpty {
-                print("Debug: Copying image only")
-                pasteboard.writeObjects([image])
-            } else {
-                print("Debug: Copying both image and text")
-                
-                // Create the formatted text
-                let formattedText = """
-                Content:
-                \(content)
-                
-                Info:
-                Tag: \(element.tagName)
-                Class: \(element.className)\(element.className.isEmpty ? "" : "\n")\
-                \((element.metadata["xpath"] as? String).map { "XPath: \($0)\n" } ?? "")\
-                \((element.metadata["location"] as? [String: String])?.compactMapValues { $0 }["pathname"].map { "URL: \($0)" } ?? "")
-                """
-                
-                print("Debug: Text content:", formattedText)
-                
-                // Create an attributed string with both image and text
-                let attributedString = NSMutableAttributedString()
-                
-                // Add the image
-                let attachment = NSTextAttachment()
-                attachment.image = image
-                let imageString = NSAttributedString(attachment: attachment)
-                attributedString.append(imageString)
-                
-                // Add a line break after the image
-                attributedString.append(NSAttributedString(string: "\n\n"))
-                
-                // Add the text
-                attributedString.append(NSAttributedString(string: formattedText))
-                
-                // Declare the types we'll support
-                pasteboard.declareTypes([.rtf, .string], owner: nil)
-                
-                // Write the RTF version with both image and text
-                if let rtfData = attributedString.rtf(from: NSRange(location: 0, length: attributedString.length)) {
-                    print("Debug: Adding RTF data, size:", rtfData.count)
-                    pasteboard.setData(rtfData, forType: .rtf)
-                }
-                
-                // Also write plain text version as fallback
-                pasteboard.setString(formattedText, forType: .string)
-                
-                print("Debug: Available types after copy:", pasteboard.types ?? [])
-            }
-        } else if !content.isEmpty {
-            pasteboard.setString(content, forType: .string)
-        }
-        
-        isCopied = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            isCopied = false
-        }
-    }
-}
-
 struct ModuleBox<Content: View>: View {
     let title: String
     let copyContent: String
@@ -404,7 +489,8 @@ struct ModuleBox<Content: View>: View {
                     CopyButton(
                         image: copyImage,
                         content: copyContent,
-                        element: ElementData()
+                        element: ElementData(),
+                        showLabel: false
                     )
                 }
                 
@@ -436,7 +522,8 @@ struct SectionHeader: View {
             CopyButton(
                 image: image,
                 content: content,
-                element: ElementData()
+                element: ElementData(),
+                showLabel: false
             )
         }
     }
@@ -469,7 +556,8 @@ struct NotebookPanel: View {
                                 CopyButton(
                                     image: element.image,
                                     content: contentText.trimmingCharacters(in: .whitespacesAndNewlines),
-                                    element: ElementData(tagName: element.tagName, className: element.className, metadata: element.metadata)
+                                    element: ElementData(tagName: element.tagName, className: element.className, metadata: element.metadata),
+                                    showLabel: true
                                 )
                                 .padding(.bottom, 8)
                             }
@@ -642,13 +730,12 @@ struct InfoRow: View {
     let value: String
     
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Text(label)
-                .frame(width: 60, alignment: .trailing)
+        HStack(alignment: .top) {
+            Text(label + ":")
                 .foregroundColor(.secondary)
-            
+                .font(.system(.body, design: .monospaced))
             Text(value)
-                .textSelection(.enabled)
+                .font(.system(.body, design: .monospaced))
         }
     }
 }
