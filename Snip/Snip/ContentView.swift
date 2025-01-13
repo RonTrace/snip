@@ -293,85 +293,125 @@ struct URLBar: View {
 }
 
 struct CopyButton: View {
-    let content: String
     let image: NSImage?
-    let label: String
+    let content: String
+    let element: ElementData
+    @State private var isCopied = false
     
-    @State private var copied = false
-    
-    init(content: String, label: String, image: NSImage? = nil) {
-        self.content = content
-        self.label = label
+    init(image: NSImage? = nil, content: String, element: ElementData) {
         self.image = image
-    }
-    
-    func copyToClipboard(includeAll: Bool = false) {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        
-        if includeAll, let image = image {
-            // Create attributed string for rich text
-            let attributedString = NSMutableAttributedString()
-            
-            // Add the text content
-            attributedString.append(NSAttributedString(string: content + "\n\n"))
-            
-            // Create a cell to hold the image
-            let cell = NSTextAttachmentCell(imageCell: image)
-            
-            // Create an attachment with the cell
-            let attachment = NSTextAttachment()
-            attachment.attachmentCell = cell
-            
-            // Calculate a reasonable size for the image
-            let maxWidth: CGFloat = 600
-            let aspectRatio = image.size.width / image.size.height
-            let width = min(maxWidth, image.size.width)
-            let height = width / aspectRatio
-            
-            // Set the bounds for the attachment
-            attachment.bounds = CGRect(x: 0, y: 0, width: width, height: height)
-            
-            // Add the image attachment
-            let imageString = NSAttributedString(attachment: attachment)
-            attributedString.append(imageString)
-            
-            // Write both RTF and image to pasteboard
-            if let rtfData = attributedString.rtf(from: NSRange(location: 0, length: attributedString.length)) {
-                pasteboard.setData(rtfData, forType: .rtf)
-            }
-            
-            // Also write the image separately
-            pasteboard.writeObjects([image])
-            
-            // And the plain text as fallback
-            pasteboard.setString(content, forType: .string)
-            
-        } else if let image = image {
-            pasteboard.writeObjects([image])
-        } else {
-            pasteboard.setString(content, forType: .string)
-        }
+        self.content = content
+        self.element = element
     }
     
     var body: some View {
         Button {
-            copyToClipboard(includeAll: label == "Copy All Content")
-            copied = true
-            
-            // Reset the copied state after 2 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                copied = false
-            }
+            copyToClipboard()
         } label: {
-            HStack(spacing: 4) {
-                Text(label)
-                Image(systemName: copied ? "checkmark.circle.fill" : "doc.on.doc")
-                    .foregroundColor(copied ? .green : .gray)
-            }
-            .font(.system(size: 12))
+            Image(systemName: isCopied ? "checkmark.circle.fill" : "doc.on.doc")
+                .foregroundColor(isCopied ? .green : .primary)
         }
         .buttonStyle(.plain)
+    }
+    
+    func copyToClipboard() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        
+        if let image = image {
+            if content.isEmpty {
+                print("Debug: Copying image only")
+                pasteboard.writeObjects([image])
+            } else {
+                print("Debug: Copying both image and text")
+                
+                // Create the formatted text
+                let formattedText = """
+                Content:
+                \(content)
+                
+                Info:
+                Tag: \(element.tagName)
+                Class: \(element.className)\(element.className.isEmpty ? "" : "\n")\
+                \((element.metadata["xpath"] as? String).map { "XPath: \($0)\n" } ?? "")\
+                \((element.metadata["location"] as? [String: String])?.compactMapValues { $0 }["pathname"].map { "URL: \($0)" } ?? "")
+                """
+                
+                print("Debug: Text content:", formattedText)
+                
+                // Create an attributed string with both image and text
+                let attributedString = NSMutableAttributedString()
+                
+                // Add the image
+                let attachment = NSTextAttachment()
+                attachment.image = image
+                let imageString = NSAttributedString(attachment: attachment)
+                attributedString.append(imageString)
+                
+                // Add a line break after the image
+                attributedString.append(NSAttributedString(string: "\n\n"))
+                
+                // Add the text
+                attributedString.append(NSAttributedString(string: formattedText))
+                
+                // Declare the types we'll support
+                pasteboard.declareTypes([.rtf, .string], owner: nil)
+                
+                // Write the RTF version with both image and text
+                if let rtfData = attributedString.rtf(from: NSRange(location: 0, length: attributedString.length)) {
+                    print("Debug: Adding RTF data, size:", rtfData.count)
+                    pasteboard.setData(rtfData, forType: .rtf)
+                }
+                
+                // Also write plain text version as fallback
+                pasteboard.setString(formattedText, forType: .string)
+                
+                print("Debug: Available types after copy:", pasteboard.types ?? [])
+            }
+        } else if !content.isEmpty {
+            pasteboard.setString(content, forType: .string)
+        }
+        
+        isCopied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            isCopied = false
+        }
+    }
+}
+
+struct ModuleBox<Content: View>: View {
+    let title: String
+    let copyContent: String
+    let copyImage: NSImage?
+    let content: Content
+    
+    init(title: String, copyContent: String, copyImage: NSImage? = nil, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.copyContent = copyContent
+        self.copyImage = copyImage
+        self.content = content()
+    }
+    
+    var body: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(title)
+                        .font(.headline)
+                    
+                    Spacer()
+                    
+                    CopyButton(
+                        image: copyImage,
+                        content: copyContent,
+                        element: ElementData()
+                    )
+                }
+                
+                content
+            }
+            .padding(8)
+        }
     }
 }
 
@@ -393,7 +433,11 @@ struct SectionHeader: View {
             
             Spacer()
             
-            CopyButton(content: content, label: "Copy", image: image)
+            CopyButton(
+                image: image,
+                content: content,
+                element: ElementData()
+            )
         }
     }
 }
@@ -411,22 +455,24 @@ struct NotebookPanel: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 16) {
                             // Copy All Button at the top
-                            CopyButton(
-                                content: """
-                                Selected Element:
-                                Tag: \(element.tagName)
-                                Class: \(element.className)
-                                
-                                Text Content:
-                                \(element.textContent)
-                                
-                                HTML:
-                                \(element.content)
-                                """,
-                                label: "Copy All Content",
-                                image: element.image
-                            )
-                            .padding(.bottom, 8)
+                            if let element = viewModel.selectedElement {
+                                let contentText = """
+                                    Content:
+                                    \(element.textContent)
+                                    
+                                    Info:
+                                    Tag: \(element.tagName)
+                                    Class: \(element.className)\(element.className.isEmpty ? "" : "\n")\
+                                    \((element.metadata["xpath"] as? String).map { "XPath: \($0)\n" } ?? "")\
+                                    \((element.metadata["location"] as? [String: String])?.compactMapValues { $0 }["pathname"].map { "URL: \($0)" } ?? "")
+                                    """
+                                CopyButton(
+                                    image: element.image,
+                                    content: contentText.trimmingCharacters(in: .whitespacesAndNewlines),
+                                    element: ElementData(tagName: element.tagName, className: element.className, metadata: element.metadata)
+                                )
+                                .padding(.bottom, 8)
+                            }
                             
                             ElementMetadata(element: element)
                         }
@@ -457,27 +503,28 @@ struct ElementMetadata: View {
         VStack(alignment: .leading, spacing: 16) {
             // Preview
             if let image = element.image {
-                GroupBox("Preview") {
+                ModuleBox(title: "Preview", copyContent: "", copyImage: image) {
                     Image(nsImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(maxHeight: 200)
-                        .padding(8)
                 }
             }
             
             // Content
-            GroupBox("Content") {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(element.textContent)
-                        .textSelection(.enabled)
-                        .font(.system(.body, design: .monospaced))
-                }
-                .padding(8)
+            ModuleBox(title: "Content", copyContent: element.textContent) {
+                Text(element.textContent)
+                    .textSelection(.enabled)
+                    .font(.system(.body, design: .monospaced))
             }
             
             // Info
-            GroupBox("Info") {
+            ModuleBox(title: "Info", copyContent: """
+                Tag: \(element.tagName)
+                Class: \(element.className)
+                XPath: \(element.metadata["xpath"] as? String ?? "")
+                URL: \(element.metadata["location"] as? [String: String] ?? [:])["pathname"] ?? ""
+                """) {
                 VStack(alignment: .leading, spacing: 8) {
                     InfoRow(label: "Tag", value: element.tagName)
                     if !element.className.isEmpty {
@@ -491,12 +538,16 @@ struct ElementMetadata: View {
                         InfoRow(label: "URL", value: pathname)
                     }
                 }
-                .padding(8)
             }
             
             // DOM Context
             if let domContext = element.metadata["domContext"] as? [String: Any] {
-                GroupBox("DOM Context") {
+                ModuleBox(title: "DOM Context", copyContent: """
+                    Parent: \(domContext["parentTag"] as? String ?? "")
+                    Children: \(domContext["childrenCount"] as? Int ?? 0)
+                    Previous: \((domContext["siblings"] as? [String: String] ?? [:])["prev"] ?? "")
+                    Next: \((domContext["siblings"] as? [String: String] ?? [:])["next"] ?? "")
+                    """) {
                     VStack(alignment: .leading, spacing: 8) {
                         if let parent = domContext["parentTag"] as? String {
                             InfoRow(label: "Parent", value: parent)
@@ -506,20 +557,26 @@ struct ElementMetadata: View {
                         }
                         if let siblings = domContext["siblings"] as? [String: String] {
                             if let prev = siblings["prev"] {
-                                InfoRow(label: "Previous Sibling", value: prev)
+                                InfoRow(label: "Previous", value: prev)
                             }
                             if let next = siblings["next"] {
-                                InfoRow(label: "Next Sibling", value: next)
+                                InfoRow(label: "Next", value: next)
                             }
                         }
                     }
-                    .padding(8)
                 }
             }
             
             // Computed Styles
             if let styles = element.metadata["styles"] as? [String: Any] {
-                GroupBox("Computed Styles") {
+                ModuleBox(title: "Computed Styles", copyContent: """
+                    Font: \(styles["font"] as? [String: String] ?? [:])
+                    Box Model:
+                      Padding: \((styles["box"] as? [String: [String: String]] ?? [:])["padding"] ?? [:])
+                      Margin: \((styles["box"] as? [String: [String: String]] ?? [:])["margin"] ?? [:])
+                      Border: \((styles["box"] as? [String: [String: String]] ?? [:])["border"] ?? [:])
+                    Layout: \(styles["layout"] as? [String: String] ?? [:])
+                    """) {
                     VStack(alignment: .leading, spacing: 12) {
                         // Font Styles
                         if let font = styles["font"] as? [String: String] {
@@ -544,13 +601,18 @@ struct ElementMetadata: View {
                             StyleSection(title: "Layout", items: layout)
                         }
                     }
-                    .padding(8)
                 }
             }
             
             // Accessibility
             if let accessibility = element.metadata["accessibility"] as? [String: Any] {
-                GroupBox("Accessibility") {
+                ModuleBox(title: "Accessibility", copyContent: """
+                    Role: \(accessibility["role"] as? String ?? "")
+                    ARIA Label: \(accessibility["ariaLabel"] as? String ?? "")
+                    Alt Text: \(accessibility["altText"] as? String ?? "")
+                    Title: \(accessibility["title"] as? String ?? "")
+                    Tab Index: \(accessibility["tabIndex"] as? Int ?? -1)
+                    """) {
                     VStack(alignment: .leading, spacing: 8) {
                         if let role = accessibility["role"] as? String, role != "none" {
                             InfoRow(label: "Role", value: role)
@@ -568,7 +630,6 @@ struct ElementMetadata: View {
                             InfoRow(label: "Tab Index", value: "\(tabIndex)")
                         }
                     }
-                    .padding(8)
                 }
             }
         }
@@ -738,6 +799,18 @@ struct SelectedElement {
     let textContent: String
     let image: NSImage?
     let metadata: [String: Any]
+}
+
+struct ElementData {
+    let tagName: String
+    let className: String
+    let metadata: [String: Any]
+    
+    init(tagName: String = "", className: String = "", metadata: [String: Any] = [:]) {
+        self.tagName = tagName
+        self.className = className
+        self.metadata = metadata
+    }
 }
 
 #Preview {
