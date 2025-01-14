@@ -2,7 +2,7 @@
 
 **Snip** is a tool I built for myself to quickly clip text, HTML, and key styles from any webpage. It was originally meant to make AI-assisted tasks easier, but I found it useful for all sorts of web content analysis—so I’m sharing it in case you might find it helpful, too.
 
-
+![Snip Screenshot](screenshot.png)
 
 ## Features
 
