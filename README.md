@@ -2,8 +2,6 @@
 
 **Snip** is a tool I built for myself to quickly clip text, HTML, and key styles from any webpage. It was originally meant to make AI-assisted tasks easier, but I found it useful for all sorts of web content analysis—so I’m sharing it in case you might find it helpful, too.
 
----
-
 ## Features
 
 - **Interactive Highlighting** – Hover over elements to see exactly what you’re inspecting  
@@ -12,22 +10,16 @@
 - **Built-In Browser** – Navigate webpages directly within Snip  
 - **SwiftUI Interface** – A native macOS app that feels right at home
 
----
-
 ## Requirements
 
 - macOS **12.0** or later  
 - Xcode **14.0** or later  
-
----
 
 ## Installation
 
 1. **Clone** this repository  
 2. **Open** `Snip.xcodeproj` in Xcode  
 3. **Build and run** the project  
-
----
 
 ## Usage
 
@@ -48,16 +40,12 @@
    - Press `3` to copy text content  
 6. **Copy Content** using the individual copy buttons for each section—everything comes out nicely structured
 
----
-
 ## Development
 
 Snip is built with a few core technologies:
 - **SwiftUI** – for a clean, native user interface  
 - **WebKit** – for rendering web pages  
 - **Combine** – for reactive updates and data flow  
-
----
 
 ## License
 
