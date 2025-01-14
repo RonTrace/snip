@@ -326,6 +326,16 @@ extension XPasteboard {
     }
 }
 
+extension View {
+    func `if`<Content: View>(_ condition: Bool, transform: (Self) -> Content) -> some View {
+        if condition {
+            return transform(self)
+        } else {
+            return self
+        }
+    }
+}
+
 struct CopyButton: View {
     let image: NSImage?
     let content: String
@@ -366,6 +376,9 @@ struct CopyButton: View {
             }
         }
         .buttonStyle(.plain)
+        .if(shortcutKey != nil) { view in
+            view.keyboardShortcut(KeyEquivalent(Character(shortcutKey!)), modifiers: [])
+        }
     }
     
     func copyToClipboard() {
@@ -481,8 +494,8 @@ struct ModuleBox<Content: View>: View {
     let title: String
     let copyContent: String
     let copyImage: NSImage?
-    let content: Content
     let shortcutKey: String?
+    let content: Content
     
     init(title: String, copyContent: String, copyImage: NSImage? = nil, shortcutKey: String? = nil, @ViewBuilder content: () -> Content) {
         self.title = title
@@ -616,7 +629,6 @@ struct ElementMetadata: View {
                         .aspectRatio(contentMode: .fit)
                         .frame(maxHeight: 200)
                 }
-                .keyboardShortcut("1", modifiers: [])
             }
             
             // Info
@@ -640,7 +652,6 @@ struct ElementMetadata: View {
                     }
                 }
             }
-            .keyboardShortcut("2", modifiers: [])
             
             // Content
             ModuleBox(title: "Content", copyContent: element.textContent, shortcutKey: "3") {
@@ -648,7 +659,6 @@ struct ElementMetadata: View {
                     .textSelection(.enabled)
                     .font(.system(.body, design: .monospaced))
             }
-            .keyboardShortcut("3", modifiers: [])
             
             // DOM Context
             if let domContext = element.metadata["domContext"] as? [String: Any] {
@@ -743,7 +753,7 @@ struct ElementMetadata: View {
                 }
             }
         }
-        .padding()
+        // .padding()
     }
 }
 
@@ -795,7 +805,8 @@ struct ClipModeButton: View {
             .cornerRadius(8)
         }
         .buttonStyle(.plain)
-        .help("Toggle Clip Mode")
+        .keyboardShortcut("c", modifiers: [])
+        .help("Toggle Clip Mode (press 'c')")
     }
 }
 
