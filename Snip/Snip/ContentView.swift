@@ -331,13 +331,15 @@ struct CopyButton: View {
     let content: String
     let element: ElementData
     let showLabel: Bool
+    let shortcutKey: String?
     @State private var isCopied = false
     
-    init(image: NSImage? = nil, content: String, element: ElementData, showLabel: Bool = false) {
+    init(image: NSImage? = nil, content: String, element: ElementData, showLabel: Bool = false, shortcutKey: String? = nil) {
         self.image = image
         self.content = content
         self.element = element
         self.showLabel = showLabel
+        self.shortcutKey = shortcutKey
     }
     
     var body: some View {
@@ -351,6 +353,15 @@ struct CopyButton: View {
                 if showLabel {
                     Text("Copy All")
                         .foregroundColor(isCopied ? .green : .primary)
+                    if let key = shortcutKey {
+                        Text(key)
+                            .foregroundColor(.gray)
+                            .font(.caption)
+                    }
+                } else if let key = shortcutKey {
+                    Text(key)
+                        .foregroundColor(.gray)
+                        .font(.caption)
                 }
             }
         }
@@ -381,14 +392,16 @@ struct CopyButton: View {
     
     private func createFormattedTextString(content: String, element: ElementData) -> String {
         return """
-        Content:
-        \(content)
-        
         Info:
         Tag: \(element.tagName)
         Class: \(element.className)\(element.className.isEmpty ? "" : "\n")\
         \((element.metadata["xpath"] as? String).map { "XPath: \($0)\n" } ?? "")\
         \((element.metadata["location"] as? [String: String])?.compactMapValues { $0 }["pathname"].map { "URL: \($0)" } ?? "")
+        
+        ---
+        
+        Content:
+        \(content)
         """
     }
 }
@@ -469,11 +482,13 @@ struct ModuleBox<Content: View>: View {
     let copyContent: String
     let copyImage: NSImage?
     let content: Content
+    let shortcutKey: String?
     
-    init(title: String, copyContent: String, copyImage: NSImage? = nil, @ViewBuilder content: () -> Content) {
+    init(title: String, copyContent: String, copyImage: NSImage? = nil, shortcutKey: String? = nil, @ViewBuilder content: () -> Content) {
         self.title = title
         self.copyContent = copyContent
         self.copyImage = copyImage
+        self.shortcutKey = shortcutKey
         self.content = content()
     }
     
@@ -490,7 +505,8 @@ struct ModuleBox<Content: View>: View {
                         image: copyImage,
                         content: copyContent,
                         element: ElementData(),
-                        showLabel: false
+                        showLabel: false,
+                        shortcutKey: shortcutKey
                     )
                 }
                 
@@ -541,26 +557,29 @@ struct NotebookPanel: View {
                 if let element = viewModel.selectedElement {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 16) {
-                            // Copy All Button at the top
-                            if let element = viewModel.selectedElement {
+                            /*if let element = viewModel.selectedElement {
                                 let contentText = """
-                                    Content:
-                                    \(element.textContent)
-                                    
                                     Info:
                                     Tag: \(element.tagName)
                                     Class: \(element.className)\(element.className.isEmpty ? "" : "\n")\
                                     \((element.metadata["xpath"] as? String).map { "XPath: \($0)\n" } ?? "")\
                                     \((element.metadata["location"] as? [String: String])?.compactMapValues { $0 }["pathname"].map { "URL: \($0)" } ?? "")
+                                    
+                                    ---
+                                    
+                                    Content:
+                                    \(element.textContent)
                                     """
                                 CopyButton(
                                     image: element.image,
                                     content: contentText.trimmingCharacters(in: .whitespacesAndNewlines),
                                     element: ElementData(tagName: element.tagName, className: element.className, metadata: element.metadata),
-                                    showLabel: true
+                                    showLabel: true,
+                                    shortcutKey: "0"
                                 )
+                                .keyboardShortcut("0", modifiers: [])
                                 .padding(.bottom, 8)
-                            }
+                            }*/
                             
                             ElementMetadata(element: element)
                         }
@@ -591,28 +610,22 @@ struct ElementMetadata: View {
         VStack(alignment: .leading, spacing: 16) {
             // Preview
             if let image = element.image {
-                ModuleBox(title: "Preview", copyContent: "", copyImage: image) {
+                ModuleBox(title: "Preview", copyContent: "", copyImage: image, shortcutKey: "1") {
                     Image(nsImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(maxHeight: 200)
                 }
-            }
-            
-            // Content
-            ModuleBox(title: "Content", copyContent: element.textContent) {
-                Text(element.textContent)
-                    .textSelection(.enabled)
-                    .font(.system(.body, design: .monospaced))
+                .keyboardShortcut("1", modifiers: [])
             }
             
             // Info
             ModuleBox(title: "Info", copyContent: """
                 Tag: \(element.tagName)
-                Class: \(element.className)
-                XPath: \(element.metadata["xpath"] as? String ?? "")
-                URL: \(element.metadata["location"] as? [String: String] ?? [:])["pathname"] ?? ""
-                """) {
+                Class: \(element.className)\(element.className.isEmpty ? "" : "\n")\
+                \((element.metadata["xpath"] as? String).map { "XPath: \($0)\n" } ?? "")\
+                \((element.metadata["location"] as? [String: String])?.compactMapValues { $0 }["pathname"].map { "URL: \($0)" } ?? "")
+                """, shortcutKey: "2") {
                 VStack(alignment: .leading, spacing: 8) {
                     InfoRow(label: "Tag", value: element.tagName)
                     if !element.className.isEmpty {
@@ -627,6 +640,15 @@ struct ElementMetadata: View {
                     }
                 }
             }
+            .keyboardShortcut("2", modifiers: [])
+            
+            // Content
+            ModuleBox(title: "Content", copyContent: element.textContent, shortcutKey: "3") {
+                Text(element.textContent)
+                    .textSelection(.enabled)
+                    .font(.system(.body, design: .monospaced))
+            }
+            .keyboardShortcut("3", modifiers: [])
             
             // DOM Context
             if let domContext = element.metadata["domContext"] as? [String: Any] {
