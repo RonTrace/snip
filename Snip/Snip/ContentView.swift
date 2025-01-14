@@ -593,7 +593,7 @@ struct NotebookPanel: View {
                                 }
                             }
 
-                            //info
+                            // Info
                             ModuleBox(title: "Info", copyContent: {
                                 var content = ""
                                 if let metadata = element.metadata["metadata"] as? [String: Any],
@@ -636,99 +636,6 @@ struct NotebookPanel: View {
                                 Text(element.textContent)
                                     .textSelection(.enabled)
                                     .font(.system(.body, design: .monospaced))
-                            }
-                            
-                            // DOM Context
-                            if let domContext = element.metadata["domContext"] as? [String: Any] {
-                                ModuleBox(title: "DOM Context", copyContent: """
-                                    Parent: \(domContext["parentTag"] as? String ?? "")
-                                    Children: \(domContext["childrenCount"] as? Int ?? 0)
-                                    Previous: \((domContext["siblings"] as? [String: String] ?? [:])["prev"] ?? "")
-                                    Next: \((domContext["siblings"] as? [String: String] ?? [:])["next"] ?? "")
-                                    """) {
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        if let parent = domContext["parentTag"] as? String {
-                                            InfoRow(label: "Parent", value: parent)
-                                        }
-                                        if let childCount = domContext["childrenCount"] as? Int {
-                                            InfoRow(label: "Children", value: "\(childCount)")
-                                        }
-                                        if let siblings = domContext["siblings"] as? [String: String] {
-                                            if let prev = siblings["prev"] {
-                                                InfoRow(label: "Previous", value: prev)
-                                            }
-                                            if let next = siblings["next"] {
-                                                InfoRow(label: "Next", value: next)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            
-                            // Computed Styles
-                            if let styles = element.metadata["styles"] as? [String: Any] {
-                                ModuleBox(title: "Computed Styles", copyContent: """
-                                    Font: \(styles["font"] as? [String: String] ?? [:])
-                                    Box Model:
-                                      Padding: \((styles["box"] as? [String: [String: String]] ?? [:])["padding"] ?? [:])
-                                      Margin: \((styles["box"] as? [String: [String: String]] ?? [:])["margin"] ?? [:])
-                                      Border: \((styles["box"] as? [String: [String: String]] ?? [:])["border"] ?? [:])
-                                    Layout: \(styles["layout"] as? [String: String] ?? [:])
-                                    """) {
-                                    VStack(alignment: .leading, spacing: 12) {
-                                        // Font Styles
-                                        if let font = styles["font"] as? [String: String] {
-                                            StyleSection(title: "Font", items: font)
-                                        }
-                                        
-                                        Divider()
-                                        
-                                        // Box Model
-                                        if let box = styles["box"] as? [String: [String: String]] {
-                                            StyleSection(title: "Box Model", items: [
-                                                "Padding": box["padding"]?.reduce("") { $0 + "\($1.value) " }.trimmingCharacters(in: .whitespaces) ?? "0",
-                                                "Margin": box["margin"]?.reduce("") { $0 + "\($1.value) " }.trimmingCharacters(in: .whitespaces) ?? "0",
-                                                "Border": box["border"]?.reduce("") { $0 + "\($1.value) " }.trimmingCharacters(in: .whitespaces) ?? "0"
-                                            ])
-                                        }
-                                        
-                                        Divider()
-                                        
-                                        // Layout
-                                        if let layout = styles["layout"] as? [String: String] {
-                                            StyleSection(title: "Layout", items: layout)
-                                        }
-                                    }
-                                }
-                            }
-                            
-                            // Accessibility
-                            if let accessibility = element.metadata["accessibility"] as? [String: Any] {
-                                ModuleBox(title: "Accessibility", copyContent: """
-                                    Role: \(accessibility["role"] as? String ?? "")
-                                    ARIA Label: \(accessibility["ariaLabel"] as? String ?? "")
-                                    Alt Text: \(accessibility["altText"] as? String ?? "")
-                                    Title: \(accessibility["title"] as? String ?? "")
-                                    Tab Index: \(accessibility["tabIndex"] as? Int ?? -1)
-                                    """) {
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        if let role = accessibility["role"] as? String, role != "none" {
-                                            InfoRow(label: "Role", value: role)
-                                        }
-                                        if let ariaLabel = accessibility["ariaLabel"] as? String, !ariaLabel.isEmpty {
-                                            InfoRow(label: "ARIA Label", value: ariaLabel)
-                                        }
-                                        if let altText = accessibility["altText"] as? String, !altText.isEmpty {
-                                            InfoRow(label: "Alt Text", value: altText)
-                                        }
-                                        if let title = accessibility["title"] as? String, !title.isEmpty {
-                                            InfoRow(label: "Title", value: title)
-                                        }
-                                        if let tabIndex = accessibility["tabIndex"] as? Int, tabIndex != -1 {
-                                            InfoRow(label: "Tab Index", value: "\(tabIndex)")
-                                        }
-                                    }
-                                }
                             }
                         }
                         .padding()
