@@ -1,4 +1,4 @@
-# Snip – A Personal Web Element Inspector
+# Snip – A modern web content clipper.
 
 **Snip** is a tool I built for myself to quickly clip text, HTML, and key styles from any webpage. It was originally meant to make AI-assisted tasks easier, but I found it useful for all sorts of web content analysis—so I’m sharing it in case you might find it helpful, too.
 
@@ -30,9 +30,6 @@
    - **Preview Image** (shortcut: `1`)  
    - **Element Metadata** (ID, tag, class, XPath, URL) (shortcut: `2`)  
    - **Clean Text Content** (shortcut: `3`)  
-   - **DOM Context** (parent, children, siblings)  
-   - **Computed Styles**  
-   - **Accessibility Info**  
 5. **Use Keyboard Shortcuts**:
    - Press `c` to toggle clip mode  
    - Press `1` to copy the preview image  
